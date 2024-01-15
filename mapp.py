@@ -1,28 +1,53 @@
 import streamlit as st
-from airtable import Airtable
-import pandas as pd
+import requests
 import folium
 from streamlit_folium import folium_static
 
-# Connexion a la airtable
-base_id = 'appLzsnUVJ5A1rdRo'
-table_name = 'images'
-api_key = 'patxhc37ccrHiEXmN.c8cea3b4af146d70fcdf3efaf4508cbba2c2ecb90765887c15dad50f47f5a436'
-airtable = Airtable(base_id, table_name, api_key)
+# Paramètres de l'API Baserow
+api_url = 'https://api.baserow.io/api/database/rows/table/234485/?user_field_names=true'
+api_key = 'TdUiddzmMMlNF1yCdHCGu15DBIZFknp7'
 
-#test pour recuperer les images de la table
-records = airtable.get_all()
-for record in tqdm(records):
-    st.write(record['fields'])
+# Fonction pour récupérer les données de Baserow
+def get_baserow_data(api_url, api_key):
+    headers = {"Authorization": f"Token {api_key}"}
+    response = requests.get(api_url, headers=headers)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception("Erreur lors de la récupération des données de Baserow")
 
-# Convertir les données en DataFrame Pandas
-data = pd.DataFrame([record['fields'] for record in records])
-
+# Fonction principale pour créer la carte
 def mapp():
     st.title('Carte des déchets sauvages')
-    #initialize the map contered around Mantes-la-Jolie
-    m = folium.Map(location=[48.9900,1.7200], zoom_start=14)
-    for idx, row in data.iterrow():
-        folium.Marker([row['lat'], row['lon']], popup = row['photo']).add_to(m)
+    
+    try:
+        data = get_baserow_data(api_url, api_key)['results']
+        m = folium.Map(location=[48.9907, 1.7102], zoom_start=13)
 
-    folium_static(m)
+        for item in data:
+            lat = item.get('Latitude')
+            long = item.get('Longitude')
+            photo_url = item['photo'][0]['url'] if item.get('photo') else None
+            date = item.get('capture_date')
+            status = item.get('status', {}).get('value', 'Statut inconnu')
+            description = item.get('description', 'Pas de description')
+
+            if lat and long and photo_url and date and status and description:
+                popup_html = f"""
+                    <div>
+                        <img src="{photo_url}" width="150" height="100" style="display:block;margin:auto;"><br>
+                        <b>Date de capture:</b> {date}<br>
+                        <b>Status:</b> {status}<br>
+                        <b>Description:</b> {description}
+                    </div>
+                """
+                iframe = folium.IFrame(popup_html, width=200, height=250)
+                popup = folium.Popup(iframe, max_width=300)
+                folium.Marker([lat, long], popup=popup).add_to(m)
+
+        folium_static(m)
+
+    except Exception as e:
+        st.error(f"Erreur lors de la récupération des données : {e}")
+
+
